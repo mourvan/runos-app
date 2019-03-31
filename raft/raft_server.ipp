@@ -386,7 +386,7 @@ template <typename data_t>
 void Server<data_t>::on(const std::string &, RPC::ClientRequest request) {
 
   std::cout << "ClientRequest received" << std::endl << request.data << std::endl;
-  if (state.role != State::Role::Leader) 
+  if (state.role == State::Role::Follower) 
   {
       
     auto *leader = state.find_peer(state.leader_id);
@@ -402,6 +402,10 @@ void Server<data_t>::on(const std::string &, RPC::ClientRequest request) {
     callbacks.send(leader->id, std::move(request)); //TODO
     return;
   }
+  else if(state.role == State::Role::Candidate)
+  {
+    return;
+  }
     uint64_t new_index = storage->log_state().uncommit.index + 1;
     // commit locally
     RPC::ClientResponse ret = {request.message_id, {new_index, storage->current_term()}};
@@ -413,7 +417,7 @@ void Server<data_t>::on(const std::string &, RPC::ClientRequest request) {
       exit(1);
     }
     
-    callbacks.client_send(request.client_id, std::move(ret));
+    //callbacks.client_send(request.client_id, std::move(ret));
 
     raft::RPC::AppendEntriesRequest<data_t> req = {
       { state.id, "", 0, storage->current_term(), storage->log_state() },

@@ -52,7 +52,7 @@ struct HostImpl {
 typedef TopologyGraph::vertex_descriptor
     vertex_descriptor;
 
-struct TopologyImpl //same as in Topology.cc
+struct ConsistentTopologyImpl //same as in Topology.cc
 {
     QReadWriteLock graph_mutex;
 
@@ -61,23 +61,14 @@ struct TopologyImpl //same as in Topology.cc
     std::unordered_map<uint64_t, vertex_descriptor> vertex_map;
 
     vertex_descriptor vertex(uint64_t dpid) {
-    	std::cout << "here 1" << std::endl;
         auto it = vertex_map.find(dpid);
-    	std::cout << "here 2" << std::endl;
-
         if (it != vertex_map.end()) {
-    		std::cout << "here 3" << std::endl;
             auto v = it->second;
-    		std::cout << "here 4" << std::endl;
             BOOST_ASSERT(get(dpid_t(), graph, v) == dpid);
-    		std::cout << "here 5" << std::endl;
             return v;
         } else {
-    		std::cout << "here 6" << std::endl;
             auto v = vertex_map[dpid] = add_vertex(graph);
-            std::cout << "here 7" << std::endl;
             put(dpid_t(), graph, v, dpid);
-    		std::cout << "here 8" << std::endl;
             return v;
         }
     }
@@ -92,7 +83,7 @@ public:
     void startUp(Loader *loader) override;
 
     // network topology information, can be accessed and used by other appications
-    TopologyImpl* m;
+    ConsistentTopologyImpl* m;
     
 private:
 	void process_entries(std::vector<raft::Entry<std::string>>& entries);

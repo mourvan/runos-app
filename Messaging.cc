@@ -106,14 +106,13 @@ void Messaging::RequestQueueProcessorThread()
   //we pop in process_events()
   for(;;)
   {
-    //not checking if we are leader
+    
     auto *leader = server->raft_server().state.find_peer(server->raft_server().state.leader_id);
     if(!request_queue.empty() && leader != nullptr)
     {
       server->raft_server().on(peers[myidx].id, request_queue.front());
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
 }
 
@@ -123,6 +122,7 @@ void Messaging::init(Loader *loader, const Config &config)
     auto app_config = config_cd(config, "messaging");
     myidx = config_get(app_config, "myidx", 0);
     heartbeat_ms = config_get(app_config, "heartbeat", 200);
+    m = new ConsistentTopologyImpl;
 
     QObject* ld = ILinkDiscovery::get(loader);
     QObject* hm = HostManager::get(loader);    
@@ -153,14 +153,14 @@ void Messaging::init(Loader *loader, const Config &config)
     }
 }
 
+//overload ==
 
 void Messaging::process_host_discovered(std::vector<string>& tokens)
 {
   //if host's mac already in hosts, delete host from hosts, add new host to hosts
   Host newhost(tokens[4], IPv4Addr(tokens[7]));
-  newhost.m->id = std::stoull(tokens[3]);
-  newhost.m->switchID = std::stoull(tokens[5]);
-  newhost.m->switchPort = std::stoul(tokens[6]);
+  newhost.switchID(std::stoull(tokens[5]));
+  newhost.switchPort(std::stoul(tokens[6]));
 
   m->hosts.push_back(newhost);
 }
@@ -181,11 +181,26 @@ void Messaging::process_link_discovered(std::vector<string>& tokens)
         LOG(WARNING) << "Ignoring loopback link on " << from.dpid;
         return;
     }
-    QWriteLocker locker(&m->graph_mutex);
+    QWriteLocker locker(&m->graph_mutex); //check if ports are occupied (duplicate events)
     auto u = m->vertex(from.dpid);
     auto v = m->vertex(to.dpid);
-    add_edge(u, v, link_property{from, to, 1}, m->graph);
 
+    auto ed = edge(u, v, m->graph); //ed.first is edge_descriptor
+
+    // there is no link between switches && l
+    if(ed.second == false)
+    {
+      add_edge(u, v, link_property{from, to, 1}, m->graph);
+    }
+    else //there already is a link, check for duplicate
+    {
+      link_property lp = m->graph[ed.first];
+      if(!(link_property{from, to, 1}.source.port == lp.source.port || link_property{from, to, 1}.target.port == lp.target.port))
+      {
+        //!(bad or duplicate link, ignoring)
+        add_edge(u, v, link_property{from, to, 1}, m->graph);
+      }
+    }
     //Link* link = new Link(from, to, 5, rand()%1000 + 2000);
     //topo.push_back(link);
     //addEvent(Event::Add, link);
@@ -224,11 +239,11 @@ void Messaging::process_entries(std::vector<raft::Entry<std::string>>& entries)
         else
           LOG(INFO) << "Unidentified event received, ignoring" << std::endl;
 
-        std::cout << "RECEIVED EVENT:" << std::endl;
-        for(int j = 0; j < tokens.size(); j++)
-        {
-          cout << tokens[j] << endl;
-        }
+        // std::cout << "RECEIVED EVENT:" << std::endl;
+        // for(int j = 0; j < tokens.size(); j++)
+        // {
+        //   cout << tokens[j] << endl;
+        // }
 
         if(tokens[0] == boost::lexical_cast<std::string>(request_queue.front().client_id) &&
            tokens[1] == boost::lexical_cast<std::string>(request_queue.front().message_id))
