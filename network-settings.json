@@ -1,0 +1,68 @@
+{
+
+"default": {
+    "services": [
+        "learning-switch",
+        "rest-listener",
+        "host-manager",
+        "webui",
+        "static-flow-pusher",
+        "switch-stats",
+        "arp-handler",
+        "flow-manager",
+        "rest-multipart",
+        "rest-flowmod",
+        "messaging"
+    ],
+
+    "flow-manager" : {
+        "interval" : 5
+    },
+
+    "rest-listener" : {
+         "port" : 9008,
+         "web-dir" : "./build/web"
+    },
+
+    "messaging" : {
+        "myidx":0,
+        "heartbeat":1000,
+         "peers" :[
+            {"name":"First", "ip":"127.0.0.1", "port":8000, "cport":9000},
+            {"name":"Second", "ip":"127.0.0.1", "port":8001, "cport":9001},
+            {"name":"Third", "ip":"127.0.0.1", "port":8002, "cport":9002}
+         ]
+    },
+
+    "controller": {
+         "nthreads": 1,
+         "cbench": false,
+         "port": 6653,
+         "pipeline": [
+             "link-discovery",
+             "host-manager",
+             "arp-handler",
+             "forwarding"
+         ]
+    },
+
+    "loader": {
+        "threads": 1
+    },
+
+    "link-discovery": {
+        "poll-interval": 10,
+        "pin-to-thread": 1
+    },
+
+    "switch-manager": {
+        "pin-to-thread": 1
+    },
+
+    "switch-stats": {
+	"poll-interval": 1,
+	"pin-to-thread": 1
+    }
+}
+
+}
