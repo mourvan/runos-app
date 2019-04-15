@@ -4,8 +4,10 @@ from mininet.net import Mininet, MininetWithControlNet
 from mininet.node import Controller, OVSKernelSwitch, RemoteController, OVSSwitch
 from mininet.cli import CLI
 from mininet.log import setLogLevel, info
+from random import randint
+import time
 
-net = Mininet(switch=OVSSwitch)
+#net = Mininet(switch=OVSSwitch)
 
 
 
@@ -47,6 +49,16 @@ def emptyNet():
     s2.start([c2])
     s3.start([c2])
     s4.start([c3])
+
+    for i in range(1,500):
+        
+        time.sleep(randint(3000, 6000)/1000)
+        args = "s2 s3 up".split()
+        net.configLinkStatus( *args )
+
+        time.sleep(randint(3000, 6000)/1000)
+        args = "s2 s3 down".split()
+        net.configLinkStatus( *args )
 
     CLI( net )
     net.stop()

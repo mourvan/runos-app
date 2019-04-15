@@ -26,7 +26,7 @@
 
     "messaging" : {
         "myidx":0,
-        "heartbeat":1000,
+        "heartbeat":200,
          "peers" :[
             {"name":"First", "ip":"127.0.0.1", "port":8000, "cport":9000},
             {"name":"Second", "ip":"127.0.0.1", "port":8001, "cport":9001},
