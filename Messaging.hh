@@ -20,9 +20,12 @@
 #include "Loader.hh"
 
 #include <string>
+#include <fstream>
+#include <chrono>
 #include <vector>
 #include <queue>
 #include <set>
+#include <map>
 #include <mutex>
 #include <unordered_map>
 #include <boost/asio.hpp>
@@ -106,7 +109,17 @@ private:
 
 	//config stuff
 	int heartbeat_ms;
+	int follower_timeout;
+	int candidate_timeout;
 	int myidx;
+	int storage_checker_timeout;
+	bool ready_to_on;
+
+	//testing and logging
+	typedef std::pair<std::string, std::string> What;  //client_id, message_id
+	std::map<What, std::chrono::time_point<std::chrono::system_clock>> request_time_map;
+	std::ofstream outfile;
+	std::string testfilename;
 
 public slots:
 	void onHostDiscovered(Host* dev);								  //host manager

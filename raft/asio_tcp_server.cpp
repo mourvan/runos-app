@@ -15,15 +15,19 @@ Server::Server(::asio::io_service &io_service, short port, short client_port,
                std::string id, raft::PeerInfo known_peers,
                std::unique_ptr<raft::Storage<std::string> > storage,
                const network::MessageProcessorFactory &factory,
-               int heartbeat_ms)
+               int heartbeat_ms, int follower_timeout, int candidate_timeout)
     : mt_(std::random_device{}()),
-      dist_(static_cast<int>(0.7 * heartbeat_ms),
+
+      dist_h_(static_cast<int>(0.7 * heartbeat_ms),
             static_cast<int>(1.3 * heartbeat_ms)),
+      dist_f_(follower_timeout, 2 * follower_timeout),
+      dist_c_(candidate_timeout, 2 * candidate_timeout),
+
       io_service_(io_service),
       acceptor_(io_service, tcp::endpoint(tcp::v4(), port)),
       client_acceptor_(io_service, tcp::endpoint(tcp::v4(), client_port)),
-      timer_(io_service, std::chrono::milliseconds(dist_(mt_))),
-      minimum_timer_(io_service, std::chrono::milliseconds(dist_.min())),
+      timer_(io_service, std::chrono::milliseconds(dist_h_(mt_))),
+      minimum_timer_(io_service, std::chrono::milliseconds(dist_h_.min())),
       message_factory_(factory),
       raft_server_(id, std::move(known_peers), std::move(storage), *this),
       next_id_(0),
@@ -36,7 +40,7 @@ void Server::start() {
     return;
   }
   stop_ = false;
-  set_vote_timeout();
+  set_follower_timeout();
   raft_server().on(raft::RPC::MinimumTimeoutRequest{}); /*??????????????????????????????????*/
   do_accept_peer();
   do_accept_client();
@@ -64,7 +68,7 @@ void Server::set_heartbeat_timeout() {
   //if (stop_) {
   //  return;
   //}
-  timer_.expires_from_now(std::chrono::milliseconds(dist_(mt_)));
+  timer_.expires_from_now(std::chrono::milliseconds(dist_h_(mt_)));
   timer_.async_wait([this](const std::error_code &e) {
     if (!e && !stop_) {
       raft_server().timeout();
@@ -72,11 +76,23 @@ void Server::set_heartbeat_timeout() {
   });
 }
 
-void Server::set_vote_timeout() {
+void Server::set_follower_timeout() {
   //if (stop_) {
   //  return;
   //}
-  timer_.expires_from_now(std::chrono::milliseconds(10 * dist_(mt_)));
+  timer_.expires_from_now(std::chrono::milliseconds(dist_f_(mt_)));
+  timer_.async_wait([this](const std::error_code &e) {
+    if (!e && !stop_) {
+      raft_server().timeout();
+    }
+  });
+}
+
+void Server::set_candidate_timeout() {
+  //if (stop_) {
+  //  return;
+  //}
+  timer_.expires_from_now(std::chrono::milliseconds(dist_c_(mt_)));
   timer_.async_wait([this](const std::error_code &e) {
     if (!e && !stop_) {
       raft_server().timeout();
@@ -88,7 +104,7 @@ void Server::set_minimum_timeout() {
   if (stop_) {
     return;
   }
-  minimum_timer_.expires_from_now(std::chrono::milliseconds(10*dist_.min()));
+  minimum_timer_.expires_from_now(std::chrono::milliseconds(10*dist_h_.min()));
   minimum_timer_.async_wait([this](const std::error_code &e) {
     if (!e && !stop_) {
       raft_server().on(raft::RPC::MinimumTimeoutRequest{});

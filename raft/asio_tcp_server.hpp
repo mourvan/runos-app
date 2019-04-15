@@ -18,7 +18,7 @@ class Server : public raft::Callbacks<std::string>,
   Server(::asio::io_service& io_service, short server_port, short client_port,
          std::string id, raft::PeerInfo known_peers,
          std::unique_ptr<raft::Storage<std::string> > storage,
-         const network::MessageProcessorFactory& factory, int heartbeat_ms);
+         const network::MessageProcessorFactory& factory, int heartbeat_ms, int follower_timeout, int candidate_timeout);
   ~Server();
   void start();
   void stop();
@@ -46,7 +46,8 @@ class Server : public raft::Callbacks<std::string>,
                    const raft::RPC::CurrentEntryResponse& response);
 
   void set_heartbeat_timeout();
-  void set_vote_timeout();
+  void set_candidate_timeout(); //params??
+  void set_follower_timeout();
   void set_minimum_timeout();
 
   raft::Server<std::string>& raft_server();
@@ -65,7 +66,9 @@ class Server : public raft::Callbacks<std::string>,
   void client_session_send(const std::string& client_id, M message);
 
   std::mt19937 mt_;
-  std::uniform_int_distribution<int> dist_;
+  std::uniform_int_distribution<int> dist_h_;
+  std::uniform_int_distribution<int> dist_f_;
+  std::uniform_int_distribution<int> dist_c_;
   ::asio::io_service& io_service_;
   tcp::acceptor acceptor_;
   tcp::acceptor client_acceptor_;

@@ -41,6 +41,10 @@ void Messaging::onLinkDiscovered(switch_and_port from, switch_and_port to)
   request.client_id = peers[myidx].id;
   request.message_id = std::to_string(++message_id);
 
+
+  request_time_map[What(request.client_id, request.message_id)] = std::chrono::system_clock::now();
+
+
   request.data = boost::lexical_cast<std::string>(request.client_id) + "," +
                  boost::lexical_cast<std::string>(request.message_id) + "," +
                  std::string("linkDiscovered") + "," +
@@ -48,6 +52,8 @@ void Messaging::onLinkDiscovered(switch_and_port from, switch_and_port to)
                  boost::lexical_cast<std::string>(from.port) + "," +
                  boost::lexical_cast<std::string>(to.dpid) + "," +
                  boost::lexical_cast<std::string>(to.port);
+
+                 //
 
   request_queue_mutex.lock();
   request_queue.push(request);
@@ -59,6 +65,8 @@ void Messaging::onLinkBroken(switch_and_port from, switch_and_port to)
   raft::RPC::ClientRequest request;
   request.client_id = peers[myidx].id;
   request.message_id = std::to_string(++message_id);
+
+  request_time_map[What(request.client_id, request.message_id)] = std::chrono::system_clock::now();
 
   request.data = boost::lexical_cast<std::string>(request.client_id) + "," +
                  boost::lexical_cast<std::string>(request.message_id) + "," +
@@ -86,6 +94,8 @@ void Messaging::onHostDiscovered(Host* dev)
     request.client_id = peers[myidx].id;
     request.message_id = std::to_string(++message_id);
 
+    request_time_map[What(request.client_id, request.message_id)] = std::chrono::system_clock::now();
+
     request.data =  boost::lexical_cast<std::string>(request.client_id) + "," +
                     boost::lexical_cast<std::string>(request.message_id) + "," +
                     std::string("hostDiscovered") + "," +
@@ -104,15 +114,26 @@ void Messaging::RequestQueueProcessorThread()
 {
   //we can only pop from queue is the request is commited
   //we pop in process_events()
+
+  //if leader is online, mo need to raft_server().on, this will only produce duplicates
   for(;;)
   {
     
     auto *leader = server->raft_server().state.find_peer(server->raft_server().state.leader_id);
     if(!request_queue.empty() && leader != nullptr)
     {
-      server->raft_server().on(peers[myidx].id, request_queue.front());
+        server->raft_server().on(peers[myidx].id, request_queue.front());
+        ready_to_on = false;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    if(ready_to_on)
+    {
+      //std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    else
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
   }
 }
 
@@ -122,6 +143,9 @@ void Messaging::init(Loader *loader, const Config &config)
     auto app_config = config_cd(config, "messaging");
     myidx = config_get(app_config, "myidx", 0);
     heartbeat_ms = config_get(app_config, "heartbeat", 200);
+    follower_timeout = config_get(app_config, "follower_timeout", 1000);
+    candidate_timeout = config_get(app_config, "candidate_timeout", 500);
+    storage_checker_timeout = config_get(app_config, "storage_checker_timeout", 10);
     m = new ConsistentTopologyImpl;
 
     QObject* ld = ILinkDiscovery::get(loader);
@@ -151,6 +175,9 @@ void Messaging::init(Loader *loader, const Config &config)
       raft::peer_info_t peer(id, ip, port, client_port);
       peers.push_back(peer);
     }
+
+    testfilename = config_get(app_config, "test_filename", peers[myidx].id + "TEST.log");
+    outfile.open(testfilename, std::ios_base::app);
 }
 
 //overload ==
@@ -249,8 +276,17 @@ void Messaging::process_entries(std::vector<raft::Entry<std::string>>& entries)
            tokens[1] == boost::lexical_cast<std::string>(request_queue.front().message_id))
         {
           request_queue_mutex.lock();
-          std::cout << "Entry commited: popping " << entries[i].data << "from request_queue" << std::endl;
+          std::cout << "Entry commited: popping " << entries[i].data << " from request_queue" << std::endl;
+
+          auto end = std::chrono::system_clock::now();
+          auto start = request_time_map[What(tokens[0], tokens[1])];
+          auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+          LOG(INFO) << "Time taken to commit the entry is: " << diff.count() << std::endl;
+          outfile << diff.count() << std::endl;
+
           request_queue.pop();
+          ready_to_on = true;
           request_queue_mutex.unlock();
         }
         /*
@@ -271,7 +307,10 @@ void Messaging::RaftThread()
 {
   asio::io_service io_service;
   avery::MyMessageProcessoryFactory message_factory;
-  server = std::make_shared<network::asio::Server>(io_service, peers[myidx].ip_port.port, peers[myidx].ip_port.client_port, peers[myidx].id, peers, std::unique_ptr<raft::Storage<std::string> >{ new avery::MemStorage(std::string(peers[myidx].id + ".log").c_str()) }, message_factory, heartbeat_ms);
+  server = std::make_shared<network::asio::Server>(io_service, peers[myidx].ip_port.port, peers[myidx].ip_port.client_port, 
+                                                   peers[myidx].id, peers, 
+                                                   std::unique_ptr<raft::Storage<std::string> >{ new avery::MemStorage(std::string(peers[myidx].id + ".log").c_str()) }, 
+                                                   message_factory, heartbeat_ms, follower_timeout, candidate_timeout);
   server->start();
   io_service.run();
 }
@@ -289,7 +328,7 @@ void Messaging::StorageCheckerThread()
       process_entries(entries);
       local_commited_idx = raft_log_commited_idx;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(100)); //TODO: checker thread remove timeout or config
+    std::this_thread::sleep_for(std::chrono::milliseconds(storage_checker_timeout)); //TODO: checker thread remove timeout or config
   }
 }
 

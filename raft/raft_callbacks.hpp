@@ -7,7 +7,8 @@ template <typename data_t>
 class Callbacks {
  public:
   virtual void set_heartbeat_timeout() = 0;
-  virtual void set_vote_timeout() = 0;
+  virtual void set_follower_timeout() = 0;
+  virtual void set_candidate_timeout() = 0;
   virtual void set_minimum_timeout() = 0;
 
   virtual void send(const std::string& peer_id,

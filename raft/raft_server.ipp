@@ -9,6 +9,7 @@
 #include <iterator>
 #include <functional>
 #include <iostream>
+#include <thread>
 
 namespace raft {
 
@@ -42,7 +43,7 @@ void Server<data_t>::on(RPC::TimeoutRequest) {
                   peer.waiting_for_response = true;
                   callbacks.send(peer.id, vote_req);
                 });
-  callbacks.set_vote_timeout();
+  callbacks.set_candidate_timeout();
 }
 
 template <typename data_t>
@@ -109,7 +110,7 @@ void Server<data_t>::on(const std::string &, RPC::VoteRequest request) {
   if ( request.header.log_state.uncommit.index >= storage->log_state().uncommit.index) {
     response.vote_granted = true;
     storage->voted_for(request.header.peer_id);
-    callbacks.set_vote_timeout();
+    callbacks.set_follower_timeout(); //mb set_candidate_timeout?
   } 
  // std::cout << "imma actually here" << std::endl;
 
@@ -225,7 +226,7 @@ void Server<data_t>::on(const std::string &, RPC::AppendEntriesRequest<data_t> r
 
   state.minimum_timeout_reached = false;
   callbacks.set_minimum_timeout();
-  callbacks.set_vote_timeout();
+  callbacks.set_follower_timeout();
 
   callbacks.send(request.header.peer_id, std::move(response));
 }
@@ -383,8 +384,9 @@ void Server<data_t>::on(const std::string &, RPC::AppendEntriesResponse response
 }
 
 template <typename data_t>
-void Server<data_t>::on(const std::string &, RPC::ClientRequest request) {
-
+void Server<data_t>::on(const std::string &, RPC::ClientRequest request) 
+{
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
   std::cout << "ClientRequest received" << std::endl << request.data << std::endl;
   if (state.role == State::Role::Follower) 
   {
@@ -413,7 +415,10 @@ void Server<data_t>::on(const std::string &, RPC::ClientRequest request) {
     // The length of time spent here is the amount of time to write to disk.
     // If append does more IO than a simple sequential write to disk you
     // are not using this tool correctly.
+
+    //if we already have entry with this peer/messgae_id combo, dont do anything
     if (storage->append({{ret.entry_info, request.data}}).index != new_index) {
+      std::cout << "haha we exit here, " << "why tho" << std::endl;
       exit(1);
     }
     
