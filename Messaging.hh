@@ -94,6 +94,9 @@ private:
 	void process_link_discovered(std::vector<std::string>& tokens);
 	void process_link_broken(std::vector<std::string>& tokens);
 
+	void dump_topo_to_file();
+	void backup_topo_from_file();
+
 	void RaftThread();
 	void StorageCheckerThread();
 	void RequestQueueProcessorThread();
@@ -112,14 +115,17 @@ private:
 	int follower_timeout;
 	int candidate_timeout;
 	int myidx;
-	int storage_checker_timeout;
+	int storage_checker_poll_interval;
 	bool ready_to_on;
 
-	//testing and logging
+	//testing, logging and backup
 	typedef std::pair<std::string, std::string> What;  //client_id, message_id
 	std::map<What, std::chrono::time_point<std::chrono::system_clock>> request_time_map;
 	std::ofstream outfile;
 	std::string testfilename;
+	std::fstream backupfile;
+	std::string backup_topo_filename;
+	bool RECOVERY_FROM_FILE;
 
 public slots:
 	void onHostDiscovered(Host* dev);								  //host manager

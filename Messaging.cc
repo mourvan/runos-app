@@ -18,6 +18,12 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/graph/graph_utility.hpp>
+#include <boost/graph/adj_list_serialize.hpp>
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/serialization/serialization.hpp>
+#include <boost/serialization/unordered_map.hpp>
+
 #include <chrono>
 #include <iostream>
 #include <thread>
@@ -52,8 +58,6 @@ void Messaging::onLinkDiscovered(switch_and_port from, switch_and_port to)
                  boost::lexical_cast<std::string>(from.port) + "," +
                  boost::lexical_cast<std::string>(to.dpid) + "," +
                  boost::lexical_cast<std::string>(to.port);
-
-                 //
 
   request_queue_mutex.lock();
   request_queue.push(request);
@@ -145,7 +149,9 @@ void Messaging::init(Loader *loader, const Config &config)
     heartbeat_ms = config_get(app_config, "heartbeat", 200);
     follower_timeout = config_get(app_config, "follower_timeout", 1000);
     candidate_timeout = config_get(app_config, "candidate_timeout", 500);
-    storage_checker_timeout = config_get(app_config, "storage_checker_timeout", 10);
+    storage_checker_poll_interval = config_get(app_config, "storage_checker_poll_interval", 10);
+    RECOVERY_FROM_FILE = config_get(app_config, "recovery_from_file", false);
+
     m = new ConsistentTopologyImpl;
 
     QObject* ld = ILinkDiscovery::get(loader);
@@ -176,8 +182,10 @@ void Messaging::init(Loader *loader, const Config &config)
       peers.push_back(peer);
     }
 
+    backup_topo_filename = config_get(app_config, "backup_topo_filename", peers[myidx].id + "-topobackup.txt");
     testfilename = config_get(app_config, "test_filename", peers[myidx].id + "TEST.log");
     outfile.open(testfilename, std::ios_base::app);
+
 }
 
 //overload ==
@@ -285,6 +293,8 @@ void Messaging::process_entries(std::vector<raft::Entry<std::string>>& entries)
           LOG(INFO) << "Time taken to commit the entry is: " << diff.count() << std::endl;
           outfile << diff.count() << std::endl;
 
+          dump_topo_to_file();
+
           request_queue.pop();
           ready_to_on = true;
           request_queue_mutex.unlock();
@@ -300,6 +310,55 @@ void Messaging::process_entries(std::vector<raft::Entry<std::string>>& entries)
         LOG(INFO) << "New host attached to global host vision, IP: " << temp.ip() << " MAC: " << temp.mac();
         */ 
   }
+}
+
+namespace boost {
+namespace serialization {
+
+template<class Archive>
+void serialize(Archive & ar, topology::link_property & l, const unsigned int version)
+{
+    ar & l.source.dpid;
+    ar & l.source.port;
+
+    ar & l.target.dpid;
+    ar & l.target.port;
+
+    ar & l.weight;
+}
+
+template<class Archive>
+void serialize(Archive & ar, ConsistentTopologyImpl & t, const unsigned int version)
+{
+  ar & t.graph;
+  ar & t.vertex_map;
+}
+
+} // namespace serialization
+} // namespace boost
+
+void Messaging::dump_topo_to_file()
+{
+  if(!RECOVERY_FROM_FILE)
+    return;
+
+  backupfile.open(backup_topo_filename, std::ios::trunc | std::ios::out);
+  boost::archive::text_oarchive oa(backupfile);
+  oa << *m;
+  backupfile.close();
+}
+
+void Messaging::backup_topo_from_file()
+{
+  if(!RECOVERY_FROM_FILE)
+    return;
+
+  backupfile.open(backup_topo_filename, std::ios::in);
+  if(!backupfile.good())
+    return;
+  boost::archive::text_iarchive ia(backupfile);
+  ia >> *m;
+  backupfile.close();
 }
 
 
@@ -328,13 +387,16 @@ void Messaging::StorageCheckerThread()
       process_entries(entries);
       local_commited_idx = raft_log_commited_idx;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(storage_checker_timeout)); //TODO: checker thread remove timeout or config
+    std::this_thread::sleep_for(std::chrono::milliseconds(storage_checker_poll_interval)); //TODO: checker thread remove timeout or config
   }
 }
 
 void Messaging::startUp(Loader *loader)
-{;
-    
+{
+    backup_topo_from_file();
+
+    boost::print_graph(m->graph);
+
     std::thread t1(&Messaging::RaftThread,this);
     t1.detach();
 
