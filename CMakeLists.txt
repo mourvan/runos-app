@@ -48,6 +48,7 @@ add_definitions(
 
 # Instruct CMake to run moc automatically when needed.
 set(CMAKE_AUTOMOC ON)
+
 include_directories(
     ${CMAKE_CURRENT_BINARY_DIR} # for Qt-generated moc files
     ${CMAKE_SOURCE_DIR}/third_party/webserver
@@ -56,6 +57,8 @@ include_directories(
 
 add_executable(runos ${SOURCES}) 
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
+
+FIND_PACKAGE(Boost REQUIRED COMPONENTS system date_time serialization)
 
 target_link_libraries(runos
     runos_types

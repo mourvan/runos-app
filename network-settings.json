@@ -27,6 +27,12 @@
     "messaging" : {
         "myidx":0,
         "heartbeat":200,
+        "follower_timeout":1000,
+        "candidate_timeout":500,
+        "storage_checker_poll_interval":100,
+        "test_filename":"First-log-5controllers-100ms-follower-event.log",
+        "backup_topo_filename":"First-topobackup.txt",
+        "recovery_from_file":false,
          "peers" :[
             {"name":"First", "ip":"127.0.0.1", "port":8000, "cport":9000},
             {"name":"Second", "ip":"127.0.0.1", "port":8001, "cport":9001},
